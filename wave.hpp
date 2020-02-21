@@ -1,26 +1,9 @@
-#ifndef	wave_hpp
-#define	wave_hpp
+#ifndef WAVE_HPP_
+#define WAVE_HPP_
 
-// コメントアウトを解除してどれか一つを有効にしてください。
-#define		USE_DOUBLE
-//#define		USE_FLOAT
-//#define		USE_INTEGER
-
-#ifdef	USE_DOUBLE
-	typedef	double	TYPE_DATA;
-#endif
-
-#ifdef	USE_FLOAT
-	typedef	float		TYPE_DATA;
-#endif
-
-#ifdef	USE_INTEGER
-	typedef	short		TYPE_DATA;
-#endif
-
-#include	<string.h>
-#include	<stdio.h>
-#include	<iostream>
+#include	<cstring>
+#include	<cstdio>
+#include	<cstdlib>
 
 class file_ptr
 {
@@ -93,27 +76,74 @@ public:
 
 	void error_exit( const char* message )
 	{
-		std::cout << message << std::endl;
+		puts( message );
 		exit( 0 );
 	}
 };
 
+struct unit_data
+{
+	short	Value;
+
+	////////// double
+	unit_data( const double& v ) 				{ *this = v; }
+	unit_data& operator = ( const double& v ){ Value = ( short )( v * 32768 ); return *this; }
+	operator double () const 						{ return Value / 32768.0; }
+
+	////////// float
+	unit_data( const float& v )					{ *this = v; }
+	unit_data& operator = ( const float& v ) { Value = ( short )( v * 32768 ); return *this; }
+	operator float () const 						{ return Value / 32768.f; }
+
+	////////// int
+	unit_data( const int& v ) 					{ *this = v; }
+	unit_data& operator = ( const int& v )		{ Value = v; return *this; }
+	operator int () const								{ return Value; }
+
+	////////// short
+	unit_data( const short& v ) 				{ *this = v; }
+	unit_data& operator = ( const short& v )	{ Value = v; return *this; }
+	operator short () const							{ return Value; }
+
+	////////// char
+	unit_data( const char& v )					{ *this = v; }
+	unit_data& operator = ( const char& v )	{ Value = ( short )( v * 256 ); return *this; }
+	operator char () const							{ return ( char )( Value / 256 ); }
+
+	////////// unsigned char
+	unit_data( const unsigned char& v )					{ *this = v; }
+	unit_data& operator = ( const unsigned char& v ) { Value = ( short )( ( v - 128 ) * 256 ); return *this; }
+	operator unsigned char () const							{ return ( unsigned char )( Value / 256 + 128 ); }
+};
+
+template <typename T>
 struct wave
 {
-  int 				fs;						// サンプリングレート
-  int 				bits;					// 精度
-  int 				length; 			// データの長さ
-	int					channel;			// チャンネル数
+  int 	fs;						// sampling frwquency
+  int 	length; 			//
+	int		channel;			// 1 or 2
 
-	TYPE_DATA		*l, *r;
+	T			*L, *R;
 
-	wave() : l( NULL ), r( NULL ) {}
+	wave():
+		fs( 0 ), length( 0 ), channel( 0 ),
+		L( NULL ), R( NULL )
+	{
+	}
 
-	wave( int _fs, int _bits, int _length, int _channel = 1 ) :
-		fs( _fs ), bits( _bits ), length( _length ), channel( _channel ),
-		l( NULL ), r( NULL )
+	wave( int _fs, int _length, int _channel = 1 ):
+		fs( _fs ), length( _length ), channel( _channel ),
+		L( NULL ), R( NULL )
 	{
 		create();
+	}
+
+	wave( const wave& src, bool copy = true ):
+		fs( src.fs ), length( src.length ), channel( src.channel ),
+		L( NULL ), R( NULL )
+	{
+		if( copy )	*this = src;
+		else 				create();
 	}
 
 	~wave() { destroy_l(); destroy_r(); }
@@ -123,18 +153,17 @@ struct wave
 		if( this != &v )
 		{
 			fs			= v.fs;
-			bits		= v.bits;
 			length	= v.length;
 			channel = v.channel;
 
 			create();
 
 			for( int i( 0 ); i < length; ++i )
-				l[ i ] = v.l[ i ];
+				L[ i ] = v.L[ i ];
 
-			if( channel > 1 )
+			if( channel == 2 )
 				for( int i( 0 ); i < length; ++i )
-					r[ i ] = v.r[ i ];
+					R[ i ] = v.R[ i ];
 		}
 		return *this;
 	}
@@ -144,16 +173,15 @@ struct wave
 		if( this != &v )
 		{
 			if( fs			!= v.fs )				return false;
-			if( bits		!= v.bits )			return false;
 			if( length	!= v.length )		return false;
 			if( channel != v.channel )	return false;
 
 			for( int i( 0 ); i < length; ++i )
-				if( l[ i ] != v.l[ i ] ) return false;
+				if( L[ i ] != v.L[ i ] ) return false;
 
-			if( channel > 1 )
+			if( channel == 2 )
 				for( int i( 0 ); i < length; ++i )
-					if( r[ i ] != v.r[ i ] ) return false;
+					if( R[ i ] != v.R[ i ] ) return false;
 		}
 		return true;
 	}
@@ -161,20 +189,20 @@ struct wave
 	bool operator != ( const wave& v ) const	{ return !( v == *this ); }
 
 	void create_l( int len )
-	{ 
+	{
 		if( channel > 0 )
 		{
 			destroy_l();
-			l = new TYPE_DATA[ len ];
+			L = new T[ len ];
 		}
 	}
 
 	void create_r( int len )
-	{ 
+	{
 		if( channel > 1 )
 		{
 			destroy_r();
-			r = new TYPE_DATA[ len ];
+			R = new T[ len ];
 		}
 	}
 
@@ -184,23 +212,30 @@ struct wave
 		create_r( length );
 	}
 
-	void destroy_l()	{ if( l )	delete [] l;	l = NULL; }
-	void destroy_r()	{ if( r )	delete [] r;	r = NULL; }
+	void destroy_l()	{ if( L )	delete [] L;	L = NULL; }
+	void destroy_r()	{ if( R )	delete [] R;	R = NULL; }
 
-	void clear( const TYPE_DATA& v = 0 )
+	void clear( const T& v = 0 )
 	{
-		if( l )
+		if( L )
 			for( int i( 0 ); i < length; ++i )
-				l[ i ] = v;
+				L[ i ] = v;
 
-		if( r )
+		if( R )
 			for( int i( 0 ); i < length; ++i )
-				r[ i ] = v;
+				R[ i ] = v;
 	}
 
-	TYPE_DATA&	operator [] ( int i )				{ return l[ i ]; }
-	TYPE_DATA&	operator [] ( int i ) const	{ return l[ i ]; }
+	      T&	operator [] ( int i )				{ return L[ i ]; }
+	const T&	operator [] ( int i ) const	{ return L[ i ]; }
 };
+
+using wave_d = wave<double>;
+using wave_f = wave<float>;
+using wave_i = wave<int>;
+using wave_s = wave<short>;
+using wave_c = wave<char>;
+using wave_uc = wave<unsigned char>;
 
 struct wav_header
 {
@@ -218,20 +253,21 @@ struct wav_header
   char 		data_chunk_ID[ 4 ];
   long 		data_chunk_size;
 
-	wav_header(){} 
+  wav_header() {}
 
-	wav_header( const wave& w ) : 
+  template<typename T>
+	wav_header( const wave<T>& w = wave<T>(), int bits = 16 ) :
 		riff_chunk_ID			{ 'R', 'I', 'F', 'F' },
 		file_format_type	{ 'W', 'A', 'V', 'E' },
 		fmt_chunk_ID			{ 'f', 'm', 't', ' ' },
 		data_chunk_ID 		{ 'd', 'a', 't', 'a' }
 	{
-		int	bytes = w.bits / 8;
+		int	bytes = bits / 8;
 
 		fmt_chunk_size		= 16;
   	wave_format_type	= 1;
 		riff_chunk_size		= 36 + w.length * bytes * w.channel;
-	  bits_per_sample		= w.bits;
+	  bits_per_sample		= bits;
 		samples_per_sec		= w.fs;
 		channel						= w.channel;
 	  bytes_per_sec			= w.fs * bytes * w.channel;
@@ -240,233 +276,200 @@ struct wav_header
 	}
 };
 
-void create( wave& w, const wav_header& wh, bool read_body = true )
-{
-	int	bytes	= wh.bits_per_sample / 8;
-
-	w.fs			= wh.samples_per_sec;
-  w.bits		= wh.bits_per_sample;
-  w.length	= wh.data_chunk_size / bytes / wh.channel;
-	w.channel	= wh.channel;
-
-	if( read_body )	w.create();
-}
-
-void read_8bit_mono( file_ptr& fp, wave& w )
+template<typename T>
+void read_8bit_mono( file_ptr& fp, wave<T>& w )
 {
 	unsigned char	v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
     fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.l[ i ] = ( TYPE_DATA )( ( v - 128.0 ) / 128.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.l[ i ] = v;
-#endif
+  	w.L[ i ] = unit_data( v );
   }
 }
 
-void write_8bit_mono( file_ptr& fp, const wave& w )
+template<typename T>
+void write_8bit_mono( file_ptr& fp, const wave<T>& w )
 {
 	unsigned char	v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = ( unsigned char )( ( w.l[ i ] + 1.0 ) / 2.0 * 256.0 );
-#endif
-#ifdef	USE_INTEGER
-  	v = w.l[ i ];
-#endif
+  	v = unit_data( w.L[ i ] );
   	fp.write( v );
   }
 
-  if( ( w.length % 2 ) == 1 ) // 奇数データ
+	if( ( w.length % 2 ) == 1 ) // make it even
   {
     v = 0;	fp.write( v );
   }
 }
 
-void read_8bit_stereo( file_ptr& fp, wave& w )
+template<typename T>
+void read_8bit_stereo( file_ptr& fp, wave<T>& w )
 {
   unsigned char v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
     fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.l[ i ] = ( TYPE_DATA )( ( v - 128.0 ) / 128.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.l[ i ] = v;
-#endif
+    w.L[ i ] = unit_data( v );
+
     fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.r[ i ] = ( TYPE_DATA )( ( v - 128.0 ) / 128.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.r[ i ] = v;
-#endif
+    w.R[ i ] = unit_data( v );
   }
 }
 
-void write_8bit_stereo( file_ptr& fp, const wave& w )
+template<typename T>
+void write_8bit_stereo( file_ptr& fp, const wave<T>& w )
 {
 	unsigned char	v;
 
   for( int i( 0 ); i < w.length; ++i )
   {
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = ( unsigned char )( ( w.l[ i ] + 1.0 ) / 2.0 * 256.0 );
-#endif
-#ifdef	USE_INTEGER
-  	v = w.l[ i ];
-#endif
+  	v = unit_data( w.L[ i ] );
   	fp.write( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = ( unsigned char )( ( w.r[ i ] + 1.0 ) / 2.0 * 256.0 );
-#endif
-#ifdef	USE_INTEGER
-  	v = w.r[ i ];
-#endif
+
+  	v = unit_data( w.R[ i ] );
   	fp.write( v );
   }
 }
 
-void read_16bit_mono( file_ptr& fp, wave& w )
+template<typename T>
+void read_16bit_mono( file_ptr& fp, wave<T>& w )
 {
 	short	v;
 
   for( int i( 0 ); i < w.length; ++i )
   {
   	fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.l[ i ] = ( TYPE_DATA )( v / 32768.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.l[ i ] = v;
-#endif
+  	w.L[ i ] = unit_data( v );
   }
 }
 
-void write_16bit_mono( file_ptr& fp, const wave& w )
+template<typename T>
+void write_16bit_mono( file_ptr& fp, const wave<T>& w )
 {
 	short	v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = w.l[ i ] * 32768.0;
-#endif
-#ifdef	USE_INTEGER
-  	v = w.l[ i ];
-#endif
-
-  	fp.write( v ); 
+  	v = ( short )unit_data( w.L[ i ] );
+  	fp.write( v );
   }
 }
 
-void read_16bit_stereo( file_ptr& fp, wave& w )
+template<typename T>
+void read_16bit_stereo( file_ptr& fp, wave<T>& w )
 {
 	short	v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
   	fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.l[ i ] = ( TYPE_DATA )( v / 32768.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.l[ i ] = v;
-#endif
+  	w.L[ i ] = unit_data( v );
 
   	fp.read( v );
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	w.r[ i ] = ( TYPE_DATA )( v / 32768.0 );
-#endif
-#ifdef	USE_INTEGER
-  	w.r[ i ] = v;
-#endif
+  	w.R[ i ] = unit_data( v );
   }
 }
 
-void write_16bit_stereo( file_ptr& fp, const wave& w )
+template<typename T>
+void write_16bit_stereo( file_ptr& fp, const wave<T>& w )
 {
 	short	v;
 
 	for( int i( 0 ); i < w.length; ++i )
   {
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = w.l[ i ] * 32768.0;
-#endif
-#ifdef	USE_INTEGER
-  	v = w.l[ i ];
-#endif
-  	fp.write( v ); 
+  	v = unit_data( w.L[ i ] );
+  	fp.write( v );
 
-#if	defined( USE_DOUBLE ) || defined( USE_FLOAT )
-  	v = w.r[ i ] * 32768.0;
-#endif
-#ifdef	USE_INTEGER
-  	v = w.r[ i ];
-#endif
-  	fp.write( v ); 
+  	v = unit_data( w.R[ i ] );
+  	fp.write( v );
   }
 }
 
-void save( const char *file_name, const wave& w )
+template<typename T>
+void save( const char *file_name, const wave<T>& w, int bits = 16 )
 {
-	wav_header	wh( w );
+	wav_header	wh( w, bits );
   file_ptr	fp( file_name, "wb" );
 	fp.write( wh );
 
-	if( ( w.bits ==  8 ) && ( w.channel == 1 ) )	write_8bit_mono   ( fp, w );
-	if( ( w.bits ==  8 ) && ( w.channel == 2 ) )	write_8bit_stereo ( fp, w );
-	if( ( w.bits == 16 ) && ( w.channel == 1 ) )	write_16bit_mono  ( fp, w );
-	if( ( w.bits == 16 ) && ( w.channel == 2 ) )	write_16bit_stereo( fp, w );
+	if( ( bits ==  8 ) && ( w.channel == 1 ) )	write_8bit_mono   ( fp, w );
+	if( ( bits ==  8 ) && ( w.channel == 2 ) )	write_8bit_stereo ( fp, w );
+	if( ( bits == 16 ) && ( w.channel == 1 ) )	write_16bit_mono  ( fp, w );
+	if( ( bits == 16 ) && ( w.channel == 2 ) )	write_16bit_stereo( fp, w );
 }
 
-void _save( const char *file_name, const wave& w )
+template<typename T>
+void _save( const char *file_name, const wave<T>& w, int bits = 16 )
 {
 	char	buf[ 1024 ];
 
-	for( int i( 0 ); i < sizeof( buf ); ++i )
-		buf[ i ] = 0;
-
-	strcpy( buf, file_name );
-
-	for( int i( sizeof( buf )-1 ); i >= 0; --i )
+	// exchange file ext
 	{
-		if( buf[ i ] == '.' )
-		{
+		for( unsigned int i( 0 ); i < sizeof( buf ); ++i )
 			buf[ i ] = 0;
-			break;
+
+		strcpy( buf, file_name );
+
+		for( int i( sizeof( buf )-1 ); i >= 0; --i )
+		{
+			if( buf[ i ] == '.' )
+			{
+				buf[ i ] = 0;
+				break;
+			}
+			else if( buf[ i ] == '\\' )
+				break;
 		}
-		else if( buf[ i ] == '\\' )
-			break;
+		strcat( buf, ".wav" );
 	}
 
-	strcat( buf, ".wav" );
-	save( buf, w );
+	save( buf, w, bits );
 }
 
-void load( const char *file_name, wave& w, bool read_body = true )
+template<typename T>
+void load( const char *file_name, wave<T>& w )
 {
 	wav_header	wh;
   file_ptr	fp( file_name, "rb" );
 	fp.read( wh );
 
-	create( w, wh, read_body );
+	w.fs			= wh.samples_per_sec;
+  w.length	= wh.data_chunk_size / ( wh.bits_per_sample / 8 ) / wh.channel;
+	w.channel	= wh.channel;
 
-	if( read_body )
-	{
-		if( ( w.bits ==  8 ) && ( w.channel == 1 ) )	read_8bit_mono   ( fp, w );
-		if( ( w.bits ==  8 ) && ( w.channel == 2 ) )	read_8bit_stereo ( fp, w );
-		if( ( w.bits == 16 ) && ( w.channel == 1 ) )	read_16bit_mono  ( fp, w );
-		if( ( w.bits == 16 ) && ( w.channel == 2 ) )	read_16bit_stereo( fp, w );
-	}
+	w.create();
+
+	if( ( wh.bits_per_sample ==  8 ) && ( w.channel == 1 ) )	read_8bit_mono   ( fp, w );
+	if( ( wh.bits_per_sample ==  8 ) && ( w.channel == 2 ) )	read_8bit_stereo ( fp, w );
+	if( ( wh.bits_per_sample == 16 ) && ( w.channel == 1 ) )	read_16bit_mono  ( fp, w );
+	if( ( wh.bits_per_sample == 16 ) && ( w.channel == 2 ) )	read_16bit_stereo( fp, w );
 }
 
-#endif
+struct wav_info
+{
+	int	fs;
+	int	bits;
+	int length;
+	int	channel;
+};
+
+wav_info get_wav_info( const char *file_name )
+{
+	wav_header	wh;
+  file_ptr	fp( file_name, "rb" );
+	fp.read( wh );
+
+	wav_info	wi;
+	wi.fs			= wh.samples_per_sec;
+  wi.bits		= wh.bits_per_sample;
+  wi.length	= wh.data_chunk_size / ( wh.bits_per_sample / 8 ) / wh.channel;
+	wi.channel	= wh.channel;
+
+	return wi;
+}
+
+#endif /* WAVE_HPP_ */
