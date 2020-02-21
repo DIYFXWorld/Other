@@ -24,9 +24,5 @@ main()
     src[ i ] =  sin( t * i ) * gain;
   }
 
-  wave_f src2( src ); // コピーのテスト
-
-  save( "sine.wav", src2 );
-
-  save( "sine_8.wav", src2, 8 );
+  save( "wave_sine.wav", src );
 }
