@@ -1,5 +1,5 @@
 
-* wave.hpp  --- MinGWでWAVの入出力を行うコマンドラインプログラム  
+* wave.hpp  --- WAVライブラリ  
 * wav_info.cpp  --- wave.hppのサンプルプログラム  
 * wave_sine.cpp  --- wave.hppのサンプルプログラム  
 * wav_sine_st.cpp  --- wave.hppのサンプルプログラム  
